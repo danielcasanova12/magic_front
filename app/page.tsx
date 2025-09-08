@@ -1,38 +1,23 @@
 "use client";
-import { useEffect, useState } from "react";
-type ApiResp<T> = {
-  ok: boolean;
-  page?: number;
-  pageSize?: number;
-  total?: number;
-  rows: T[];
-  error?: string; // <-- ADICIONE ESTA LINHA
-};
+import Link from "next/link";
+
 export default function Home() {
-  const [data, setData] = useState<ApiResp<unknown> | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    fetch("/api/db-test")
-      .then((r) => r.json())
-      .then((j) => setData(j))
-      .catch((e) => setErr(String(e)));
-  }, []);
-
   return (
-    <main className="p-6">
-      <h1 className="text-2xl font-bold">Magic Web - Portfolio</h1>
-      <p className="mt-2 text-sm text-gray-600">
-        Acompanhe seus investimentos e a performance da sua carteira.
-      </p>
-
-      {err && <pre className="mt-4 text-red-600">Erro: {err}</pre>}
-
-      {data && (
-        <pre className="mt-4 bg-gray-100 p-3 rounded">
-          {JSON.stringify(data, null, 2)}
-        </pre>
-      )}
+    <main className="flex flex-col items-center justify-center min-h-screen p-6 bg-gray-50">
+      <div className="text-center">
+        <h1 className="text-5xl font-extrabold text-gray-900">Magic Web - Portfolio</h1>
+        <p className="mt-4 text-lg text-gray-600 max-w-2xl mx-auto">
+          A ferramenta definitiva para acompanhar seus investimentos, analisar a performance da sua carteira e tomar decisões baseadas em dados.
+        </p>
+      </div>
+      <div className="mt-10">
+        <Link href="/checklist" className="px-8 py-4 font-bold text-white bg-blue-600 rounded-lg shadow-lg hover:bg-blue-700 transition-transform transform hover:scale-105">
+            Acessar meu Checklist de Ações
+        </Link>
+      </div>
+      <footer className="absolute bottom-5 text-gray-500 text-sm">
+        Desenvolvido com Next.js e Tailwind CSS.
+      </footer>
     </main>
   );
 }
