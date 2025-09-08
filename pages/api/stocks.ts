@@ -15,11 +15,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const q = String(req.query.q ?? "").trim() || undefined;
     const sector = String(req.query.sector ?? "").trim() || undefined;
+    const tickers = String(req.query.tickers ?? "").trim() || undefined;
     const min_liquidity = req.query.min_liquidity ? Number(req.query.min_liquidity) : undefined;
     const min_mcap = req.query.min_mcap ? Number(req.query.min_mcap) : undefined;
     const sort = String(req.query.sort ?? "");
 
-    const { whereSql, values } = buildFilters({ q, sector, min_liquidity, min_mcap }, cols, "l");
+    const { whereSql, values } = buildFilters({ q, sector, min_liquidity, min_mcap, tickers }, cols, "l");
     const orderBy = buildOrderBy(sort || undefined, allowedSortCols(cols), "l");
 
     // selecionar colunas: sempre inclui ticker e tenta mapear nome/sector
@@ -28,6 +29,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const selectCols = [
       `l."ticker"`,
+      `l."price"`,
       nameCol ? `l."${nameCol}" AS company_name` : `NULL AS company_name`,
       sectorCol ? `l."${sectorCol}" AS sector` : `NULL AS sector`,
       cols.has("earning_yield") ? `l."earning_yield"` : `NULL AS earning_yield`,

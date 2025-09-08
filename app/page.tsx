@@ -21,9 +21,9 @@ export default function Home() {
 
   return (
     <main className="p-6">
-      <h1 className="text-2xl font-bold">Magic Web</h1>
+      <h1 className="text-2xl font-bold">Magic Web - Portfolio</h1>
       <p className="mt-2 text-sm text-gray-600">
-        Teste de conexão com o banco ao iniciar o dev.
+        Acompanhe seus investimentos e a performance da sua carteira.
       </p>
 
       {err && <pre className="mt-4 text-red-600">Erro: {err}</pre>}

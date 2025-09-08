@@ -36,13 +36,22 @@ export function buildOrderBy(
 }
 
 export function buildFilters(
-  params: { q?: string; sector?: string; min_liquidity?: number; min_mcap?: number },
+  params: { q?: string; sector?: string; min_liquidity?: number; min_mcap?: number; tickers?: string },
   cols: Set<string>,
   alias = ""
 ) {
   const where: string[] = [];
   const values: unknown[] = [];
   const a = alias ? alias + "." : "";
+
+  if (params.tickers) {
+    const arr = params.tickers.split(",").map(s => s.trim().toUpperCase()).filter(Boolean);
+    if (arr.length > 0) {
+      const placeholders = arr.map((_, i) => `$${values.length + i + 1}`).join(", ");
+      values.push(...arr);
+      where.push(`${a}"ticker" IN (${placeholders})`);
+    }
+  }
 
   if (params.q) {
     const hasTicker = cols.has("ticker");

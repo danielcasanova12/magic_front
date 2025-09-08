@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 const OWNED_KEY = "ranking_magic_owned_tickers";
+const INVESTMENT_KEY = "ranking_magic_investment";
 
 type Row = {
   ticker: string;
@@ -82,6 +83,24 @@ function saveOwned(set: Set<string>) {
   localStorage.setItem(OWNED_KEY, JSON.stringify(Array.from(set)));
 }
 
+function loadInvestment(): { total: number; stocks: Record<string, number> } {
+  try {
+    const raw = localStorage.getItem(INVESTMENT_KEY);
+    if (!raw) return { total: 0, stocks: {} };
+    const data = JSON.parse(raw);
+    return {
+      total: Number(data.total) || 0,
+      stocks: data.stocks || {},
+    };
+  } catch {
+    return { total: 0, stocks: {} };
+  }
+}
+
+function saveInvestment(total: number, stocks: Record<string, number>) {
+  localStorage.setItem(INVESTMENT_KEY, JSON.stringify({ total, stocks }));
+}
+
 export default function ChecklistPage() {
   // filtros/estado tabela
   const [q, setQ] = useState("");
@@ -98,6 +117,11 @@ export default function ChecklistPage() {
   const [owned, setOwned] = useState<Set<string>>(new Set());
   const [ownedInput, setOwnedInput] = useState("");
   const [ownedRanks, setOwnedRanks] = useState<Map<string, number | null>>(new Map());
+  const [stockPrices, setStockPrices] = useState<Record<string, number>>({});
+
+  // investimento
+  const [totalInvestment, setTotalInvestment] = useState(0);
+  const [stockInvestments, setStockInvestments] = useState<Record<string, number>>({});
 
   // ping API/banco
   const [dbInfo, setDbInfo] = useState<string | null>(null);
@@ -111,6 +135,9 @@ export default function ChecklistPage() {
   // carregar carteira inicial
   useEffect(() => {
     setOwned(loadOwned());
+    const { total, stocks } = loadInvestment();
+    setTotalInvestment(total);
+    setStockInvestments(stocks);
   }, []);
 
   // montar querystring principal
@@ -182,11 +209,37 @@ export default function ChecklistPage() {
     }
   }
 
-  // sempre que a carteira mudar, salva e atualiza ranks
+  async function refreshStockPrices(currentOwned: Set<string>) {
+    const list = Array.from(currentOwned);
+    if (list.length === 0) {
+      setStockPrices({});
+      return;
+    }
+    try {
+      const data = await fetchJsonSafe<ApiResp<{ ticker: string; price: number }>>(`/api/stocks?tickers=${encodeURIComponent(list.join(","))}`);
+      if (data.ok) {
+        const prices: Record<string, number> = {};
+        for (const stock of data.rows) {
+          prices[stock.ticker.toUpperCase()] = stock.price;
+        }
+        setStockPrices(prices);
+      }
+    } catch {
+      // ignora erro de preços, UI continua
+    }
+  }
+
+  // sempre que a carteira mudar, salva e atualiza ranks e preços
   useEffect(() => {
     saveOwned(owned);
     refreshOwnedRanks(owned);
+    refreshStockPrices(owned);
   }, [owned]);
+
+  // sempre que o investimento mudar, salva
+  useEffect(() => {
+    saveInvestment(totalInvestment, stockInvestments);
+  }, [totalInvestment, stockInvestments]);
 
   // adicionar/remover individual (botão + na tabela)
   function toggleOwned(ticker: string) {
@@ -435,6 +488,17 @@ export default function ChecklistPage() {
               </button>
             </div>
 
+            {/* total investido */}
+            <div style={{ marginBottom: 8 }}>
+              <label style={{ fontSize: 14, marginRight: 8 }}>Total a investir (R$):</label>
+              <input
+                type="number"
+                value={totalInvestment}
+                onChange={(e) => setTotalInvestment(Number(e.target.value))}
+                style={{ padding: 8, border: "1px solid #ccc", borderRadius: 8, width: 120 }}
+              />
+            </div>
+
             {/* contador */}
             <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>{owned.size} tickers</div>
 
@@ -445,24 +509,45 @@ export default function ChecklistPage() {
                 .map((t) => {
                   const fr = ownedRanks.get(t) ?? null;
                   const color = rankColor(fr);
+                  const price = stockPrices[t];
+                  const investment = stockInvestments[t] || 0;
+                  const percentage = totalInvestment > 0 ? (investment / totalInvestment) * 100 : 0;
+
                   return (
                     <li
                       key={t}
                       style={{
-                        display: "flex",
+                        display: "grid",
+                        gridTemplateColumns: "64px 1fr 1fr 60px",
                         alignItems: "center",
                         gap: 8,
                         padding: "6px 0",
                         borderBottom: "1px solid #f1f1f1",
                       }}
                     >
-                      <span style={{ fontWeight: 700, color, minWidth: 64 }}>{t}</span>
-                      <span style={{ fontSize: 12, color: "#555" }}>rank: {fr == null ? "—" : fr}</span>
-                      <div style={{ marginLeft: "auto" }}>
-                        <button onClick={() => removeOwned(t)} style={{ ...btn, padding: "4px 8px", borderColor: "#e88" }}>
-                          remover
-                        </button>
+                      <span style={{ fontWeight: 700, color }}>{t}</span>
+                      <div style={{ fontSize: 12, color: "#555" }}>
+                        Preço: {price ? fmtMoney(price) : "..."}
+                        <br />
+                        Rank: {fr == null ? "—" : fr}
                       </div>
+                      <div>
+                        <input
+                          type="number"
+                          value={investment}
+                          onChange={(e) =>
+                            setStockInvestments((prev) => ({ ...prev, [t]: Number(e.target.value) }))
+                          }
+                          style={{ padding: 4, border: "1px solid #ccc", borderRadius: 4, width: "100%" }}
+                          placeholder="R$"
+                        />
+                        <div style={{ fontSize: 11, color: "#555", textAlign: "center" }}>
+                          {percentage.toFixed(1)}%
+                        </div>
+                      </div>
+                      <button onClick={() => removeOwned(t)} style={{ ...btn, padding: "4px 8px", borderColor: "#e88" }}>
+                        remover
+                      </button>
                     </li>
                   );
                 })}
