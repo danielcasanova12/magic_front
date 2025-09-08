@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 const OWNED_KEY = "ranking_magic_owned_tickers";
+const PORTFOLIO_KEY = "portfolio_items";
 
 type Row = {
   ticker: string;
@@ -27,6 +28,7 @@ type ApiResp<T> = {
 };
 
 type RankRow = { ticker: string; final_rank: number | null };
+type PortfolioItem = { ticker: string; quantity: number; price: number };
 
 // ===== utils =====
 function n(v: unknown): number | null {
@@ -82,6 +84,15 @@ function saveOwned(set: Set<string>) {
   localStorage.setItem(OWNED_KEY, JSON.stringify(Array.from(set)));
 }
 
+function loadPortfolio(): PortfolioItem[] {
+  try {
+    const raw = localStorage.getItem(PORTFOLIO_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
 export default function ChecklistPage() {
   // filtros/estado tabela
   const [q, setQ] = useState("");
@@ -101,6 +112,8 @@ export default function ChecklistPage() {
 
   // ping API/banco
   const [dbInfo, setDbInfo] = useState<string | null>(null);
+  const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
+  const [top10, setTop10] = useState<RankRow[]>([]);
 
   // top/final rank rule: verde se < 20, vermelho caso contrário
   function rankColor(finalRank: number | null | undefined) {
@@ -111,6 +124,12 @@ export default function ChecklistPage() {
   // carregar carteira inicial
   useEffect(() => {
     setOwned(loadOwned());
+    setPortfolio(loadPortfolio());
+    fetchJsonSafe<ApiResp<RankRow>>(`/api/checklist?pageSize=10&sort=final_rank`)
+      .then((data) => {
+        if (data.ok) setTop10(data.rows as RankRow[]);
+      })
+      .catch(() => {});
   }, []);
 
   // montar querystring principal
@@ -188,6 +207,24 @@ export default function ChecklistPage() {
     refreshOwnedRanks(owned);
   }, [owned]);
 
+  const totalInvested = useMemo(
+    () => portfolio.reduce((s, i) => s + i.quantity * i.price, 0),
+    [portfolio]
+  );
+
+  const topComparison = useMemo(
+    () =>
+      top10.map((r) => {
+        const p = portfolio.find(
+          (i) => i.ticker.toUpperCase() === r.ticker.toUpperCase()
+        );
+        const value = p ? p.quantity * p.price : 0;
+        const pct = totalInvested ? (value / totalInvested) * 100 : 0;
+        return { ticker: r.ticker, final_rank: n(r.final_rank), pct };
+      }),
+    [top10, portfolio, totalInvested]
+  );
+
   // adicionar/remover individual (botão + na tabela)
   function toggleOwned(ticker: string) {
     setOwned((prev) => {
@@ -264,6 +301,33 @@ export default function ChecklistPage() {
         <div style={{ marginBottom: 8, fontSize: 12, color: dbInfo.includes("OK") ? "#0b7a0b" : "crimson" }}>
           {dbInfo}
         </div>
+      )}
+
+      {topComparison.length > 0 && (
+        <section style={{ marginBottom: 16 }}>
+          <h2 style={{ fontSize: 18, marginBottom: 8 }}>Comparação com top 10</h2>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead style={{ background: "#f7f7f7" }}>
+              <tr>
+                <th style={th}>Ticker</th>
+                <th style={th}>Rank</th>
+                <th style={th}>% carteira</th>
+              </tr>
+            </thead>
+            <tbody>
+              {topComparison.map((c) => (
+                <tr key={c.ticker}>
+                  <td style={td}>{c.ticker}</td>
+                  <td style={td}>{c.final_rank ?? "—"}</td>
+                  <td style={td}>{c.pct.toFixed(2)}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
+            Objetivo: 10 ações com 10% cada.
+          </p>
+        </section>
       )}
 
       {/* layout em 2 colunas: tabela (flex 3) | carteira (flex 1) */}
