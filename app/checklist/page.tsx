@@ -214,13 +214,13 @@ export default function ChecklistPage() {
 
   const topComparison = useMemo(
     () =>
-      top10.map((r) => {
-        const p = portfolio.find(
-          (i) => i.ticker.toUpperCase() === r.ticker.toUpperCase()
+      portfolio.map((p) => {
+        const match = top10.find(
+          (t) => t.ticker.toUpperCase() === p.ticker.toUpperCase()
         );
-        const value = p ? p.quantity * p.price : 0;
+        const value = p.quantity * p.price;
         const pct = totalInvested ? (value / totalInvested) * 100 : 0;
-        return { ticker: r.ticker, final_rank: n(r.final_rank), pct };
+        return { ticker: p.ticker, final_rank: n(match?.final_rank), pct };
       }),
     [top10, portfolio, totalInvested]
   );
@@ -305,7 +305,7 @@ export default function ChecklistPage() {
 
       {topComparison.length > 0 && (
         <section style={{ marginBottom: 16 }}>
-          <h2 style={{ fontSize: 18, marginBottom: 8 }}>Comparação com top 10</h2>
+          <h2 style={{ fontSize: 18, marginBottom: 8 }}>Minha carteira vs top 10</h2>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead style={{ background: "#f7f7f7" }}>
               <tr>
