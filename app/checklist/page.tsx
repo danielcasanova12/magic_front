@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-const OWNED_KEY = "ranking_magic_owned_tickers";
 const PORTFOLIO_KEY = "portfolio_items";
 
 type Row = {
@@ -69,21 +68,6 @@ async function fetchJsonSafe<T>(url: string): Promise<T> {
 }
 
 // ===== localStorage carteira =====
-function loadOwned(): Set<string> {
-  try {
-    const raw = localStorage.getItem(OWNED_KEY);
-    if (!raw) return new Set();
-    const arr = JSON.parse(raw);
-    if (Array.isArray(arr)) return new Set(arr.map((t) => String(t).toUpperCase()));
-    return new Set();
-  } catch {
-    return new Set();
-  }
-}
-function saveOwned(set: Set<string>) {
-  localStorage.setItem(OWNED_KEY, JSON.stringify(Array.from(set)));
-}
-
 function loadPortfolio(): PortfolioItem[] {
   try {
     const raw = localStorage.getItem(PORTFOLIO_KEY);
@@ -91,6 +75,10 @@ function loadPortfolio(): PortfolioItem[] {
   } catch {
     return [];
   }
+}
+
+function savePortfolio(items: PortfolioItem[]) {
+  localStorage.setItem(PORTFOLIO_KEY, JSON.stringify(items));
 }
 
 export default function ChecklistPage() {
@@ -105,14 +93,16 @@ export default function ChecklistPage() {
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  // carteira (lista, input, ranks)
-  const [owned, setOwned] = useState<Set<string>>(new Set());
-  const [ownedInput, setOwnedInput] = useState("");
-  const [ownedRanks, setOwnedRanks] = useState<Map<string, number | null>>(new Map());
+  // carteira
+  const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
+  const [portfolioRanks, setPortfolioRanks] = useState<Map<string, number | null>>(new Map());
+  const owned = useMemo(
+    () => new Set(portfolio.map((p) => p.ticker.toUpperCase())),
+    [portfolio]
+  );
 
   // ping API/banco
   const [dbInfo, setDbInfo] = useState<string | null>(null);
-  const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
   const [top10, setTop10] = useState<RankRow[]>([]);
 
   // top/final rank rule: verde se < 20, vermelho caso contrário
@@ -123,8 +113,9 @@ export default function ChecklistPage() {
 
   // carregar carteira inicial
   useEffect(() => {
-    setOwned(loadOwned());
-    setPortfolio(loadPortfolio());
+    const items = loadPortfolio();
+    setPortfolio(items);
+    refreshPortfolioRanks(items);
     fetchJsonSafe<ApiResp<RankRow>>(`/api/checklist?pageSize=10&sort=final_rank`)
       .then((data) => {
         if (data.ok) setTop10(data.rows as RankRow[]);
@@ -181,20 +172,22 @@ export default function ChecklistPage() {
   }, []);
 
   // atualizar ranks da carteira (bulk)
-  async function refreshOwnedRanks(currentOwned: Set<string>) {
-    const list = Array.from(currentOwned);
+  async function refreshPortfolioRanks(current: PortfolioItem[]) {
+    const list = current.map((p) => p.ticker.toUpperCase());
     if (list.length === 0) {
-      setOwnedRanks(new Map());
+      setPortfolioRanks(new Map());
       return;
     }
     try {
-      const data = await fetchJsonSafe<ApiResp<RankRow>>(`/api/ranks?tickers=${encodeURIComponent(list.join(","))}`);
+      const data = await fetchJsonSafe<ApiResp<RankRow>>(
+        `/api/ranks?tickers=${encodeURIComponent(list.join(","))}`
+      );
       if (data.ok) {
         const m = new Map<string, number | null>();
         for (const r of data.rows) {
           m.set(r.ticker.toUpperCase(), r.final_rank);
         }
-        setOwnedRanks(m);
+        setPortfolioRanks(m);
       }
     } catch {
       // ignora erro de ranks, UI continua
@@ -203,9 +196,9 @@ export default function ChecklistPage() {
 
   // sempre que a carteira mudar, salva e atualiza ranks
   useEffect(() => {
-    saveOwned(owned);
-    refreshOwnedRanks(owned);
-  }, [owned]);
+    savePortfolio(portfolio);
+    refreshPortfolioRanks(portfolio);
+  }, [portfolio]);
 
   const totalInvested = useMemo(
     () => portfolio.reduce((s, i) => s + i.quantity * i.price, 0),
@@ -220,45 +213,50 @@ export default function ChecklistPage() {
         );
         const value = p.quantity * p.price;
         const pct = totalInvested ? (value / totalInvested) * 100 : 0;
-        return { ticker: p.ticker, final_rank: n(match?.final_rank), pct };
+        return {
+          ticker: p.ticker,
+          final_rank: n(match?.final_rank),
+          quantity: p.quantity,
+          price: p.price,
+          pct,
+        };
       }),
     [top10, portfolio, totalInvested]
   );
 
+  function updateQty(ticker: string, qty: number) {
+    setPortfolio((prev) =>
+      prev.map((p) => (p.ticker === ticker ? { ...p, quantity: qty } : p))
+    );
+  }
+
+  function updatePrice(ticker: string, price: number) {
+    setPortfolio((prev) =>
+      prev.map((p) => (p.ticker === ticker ? { ...p, price } : p))
+    );
+  }
+
+  function removeItem(ticker: string) {
+    setPortfolio((prev) => prev.filter((p) => p.ticker !== ticker));
+  }
+
   // adicionar/remover individual (botão + na tabela)
-  function toggleOwned(ticker: string) {
-    setOwned((prev) => {
-      const next = new Set(prev);
-      const t = ticker.toUpperCase();
-      if (next.has(t)) next.delete(t);
-      else next.add(t);
-      return next;
-    });
+  function togglePortfolio(ticker: string) {
+    const t = ticker.toUpperCase();
+    if (owned.has(t)) {
+      removeItem(t);
+      return;
+    }
+    const qtyStr = prompt("Quantidade?");
+    const priceStr = prompt("Preço?");
+    const qty = Number(qtyStr);
+    const price = Number(priceStr);
+    if (!Number.isFinite(qty) || qty <= 0 || !Number.isFinite(price) || price <= 0)
+      return;
+    setPortfolio((prev) => [...prev, { ticker: t, quantity: qty, price }]);
   }
 
   // adicionar via input
-  function addOwnedFromInput() {
-    const tokens = ownedInput
-      .split(/[\s,;\n\r\t]+/g)
-      .map((t) => t.trim().toUpperCase())
-      .filter(Boolean);
-    if (tokens.length === 0) return;
-    setOwned((prev) => {
-      const next = new Set(prev);
-      tokens.forEach((t) => next.add(t));
-      return next;
-    });
-    setOwnedInput("");
-  }
-
-  // remover da carteira via painel
-  function removeOwned(t: string) {
-    setOwned((prev) => {
-      const next = new Set(prev);
-      next.delete(t);
-      return next;
-    });
-  }
 
   // sort helpers
   function toggleSort(col: string) {
@@ -278,7 +276,7 @@ export default function ChecklistPage() {
   function addBtnStyle(ticker: string, rowFinalRank?: number | string | null): React.CSSProperties {
     const t = ticker.toUpperCase();
     const isOwned = owned.has(t);
-    const fr = rowFinalRank != null ? n(rowFinalRank) : ownedRanks.get(t) ?? null;
+    const fr = rowFinalRank != null ? n(rowFinalRank) : portfolioRanks.get(t) ?? null;
     const color = rankColor(fr ?? null);
     return {
       ...btn,
@@ -311,7 +309,10 @@ export default function ChecklistPage() {
               <tr>
                 <th style={th}>Ticker</th>
                 <th style={th}>Rank</th>
+                <th style={th}>Qtd</th>
+                <th style={th}>Preço</th>
                 <th style={th}>% carteira</th>
+                <th style={th}></th>
               </tr>
             </thead>
             <tbody>
@@ -319,7 +320,31 @@ export default function ChecklistPage() {
                 <tr key={c.ticker}>
                   <td style={td}>{c.ticker}</td>
                   <td style={td}>{c.final_rank ?? "—"}</td>
+                  <td style={td}>
+                    <input
+                      type="number"
+                      value={c.quantity}
+                      onChange={(e) => updateQty(c.ticker, Number(e.target.value))}
+                      style={{ width: 70 }}
+                    />
+                  </td>
+                  <td style={td}>
+                    <input
+                      type="number"
+                      value={c.price}
+                      onChange={(e) => updatePrice(c.ticker, Number(e.target.value))}
+                      style={{ width: 80 }}
+                    />
+                  </td>
                   <td style={td}>{c.pct.toFixed(2)}%</td>
+                  <td style={td}>
+                    <button
+                      onClick={() => removeItem(c.ticker)}
+                      style={{ ...btn, padding: "4px 8px", borderColor: "#e88" }}
+                    >
+                      remover
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -330,53 +355,51 @@ export default function ChecklistPage() {
         </section>
       )}
 
-      {/* layout em 2 colunas: tabela (flex 3) | carteira (flex 1) */}
-      <div style={{ display: "grid", gridTemplateColumns: "3fr 1fr", gap: 16 }}>
-        {/* COLUNA ESQUERDA — Tabela */}
-        <section>
-          {/* Toolbar */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 220px 140px 1fr",
-              gap: 8,
-              alignItems: "center",
-              marginBottom: 12,
+      {/* Tabela principal */}
+      <section>
+        {/* Toolbar */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 220px 140px 1fr",
+            gap: 8,
+            alignItems: "center",
+            marginBottom: 12,
+          }}
+        >
+          <input
+            value={q}
+            onChange={(e) => {
+              setPage(1);
+              setQ(e.target.value);
             }}
+            placeholder="Buscar por TICKER / Nome"
+            style={{ padding: 8, border: "1px solid #ccc", borderRadius: 8 }}
+          />
+          <input
+            value={sector}
+            onChange={(e) => {
+              setPage(1);
+              setSector(e.target.value);
+            }}
+            placeholder="Setor (opcional)"
+            style={{ padding: 8, border: "1px solid #ccc", borderRadius: 8 }}
+          />
+          <select
+            value={pageSize}
+            onChange={(e) => {
+              setPage(1);
+              setPageSize(Number(e.target.value));
+            }}
+            style={{ padding: 8, border: "1px solid #ccc", borderRadius: 8 }}
+            title="Itens por página"
           >
-            <input
-              value={q}
-              onChange={(e) => {
-                setPage(1);
-                setQ(e.target.value);
-              }}
-              placeholder="Buscar por TICKER / Nome"
-              style={{ padding: 8, border: "1px solid #ccc", borderRadius: 8 }}
-            />
-            <input
-              value={sector}
-              onChange={(e) => {
-                setPage(1);
-                setSector(e.target.value);
-              }}
-              placeholder="Setor (opcional)"
-              style={{ padding: 8, border: "1px solid #ccc", borderRadius: 8 }}
-            />
-            <select
-              value={pageSize}
-              onChange={(e) => {
-                setPage(1);
-                setPageSize(Number(e.target.value));
-              }}
-              style={{ padding: 8, border: "1px solid #ccc", borderRadius: 8 }}
-              title="Itens por página"
-            >
-              {[10, 20, 30, 50, 100, 200].map((n) => (
-                <option key={n} value={n}>
-                  {n}/página
-                </option>
-              ))}
-            </select>
+            {[10, 20, 30, 50, 100, 200].map((n) => (
+              <option key={n} value={n}>
+                {n}/página
+              </option>
+            ))}
+          </select>
 
             <div style={{ justifySelf: "end", color: "#555" }}>
               {loading ? "Carregando..." : `Mostrando ${rows.length} de ${total}`}
@@ -417,7 +440,7 @@ export default function ChecklistPage() {
                 {rows.map((r, idx) => {
                   const rowNumber = (page - 1) * pageSize + (idx + 1);
                   const t = r.ticker.toUpperCase();
-                  const fr = r.final_rank != null ? n(r.final_rank) : ownedRanks.get(t) ?? null;
+                  const fr = r.final_rank != null ? n(r.final_rank) : portfolioRanks.get(t) ?? null;
                   const color = rankColor(fr);
 
                   return (
@@ -425,7 +448,7 @@ export default function ChecklistPage() {
                       <td style={td}>{rowNumber}</td>
                       <td style={{ ...td, width: 44 }}>
                         <button
-                          onClick={() => toggleOwned(r.ticker)}
+                          onClick={() => togglePortfolio(r.ticker)}
                           style={addBtnStyle(r.ticker, r.final_rank)}
                           title="Adicionar/remover da carteira"
                         >
@@ -461,11 +484,11 @@ export default function ChecklistPage() {
             </table>
           </div>
 
-          {/* Paginação */}
-          <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 12 }}>
-            <button onClick={() => setPage(1)} disabled={page <= 1} style={btn}>
-              «
-            </button>
+        {/* Paginação */}
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 12 }}>
+          <button onClick={() => setPage(1)} disabled={page <= 1} style={btn}>
+            «
+          </button>
             <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1} style={btn}>
               Anterior
             </button>
@@ -479,64 +502,7 @@ export default function ChecklistPage() {
               »
             </button>
           </div>
-        </section>
-
-        {/* COLUNA DIREITA — Minha carteira */}
-        <aside>
-          <div style={{ border: "1px solid #ddd", borderRadius: 8, padding: 12 }}>
-            <h2 style={{ margin: 0, marginBottom: 8, fontSize: 18 }}>Minha carteira</h2>
-
-            {/* input para digitar e adicionar */}
-            <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-              <input
-                value={ownedInput}
-                onChange={(e) => setOwnedInput(e.target.value)}
-                placeholder="Ex.: ITSA4, PETR4"
-                style={{ flex: 1, padding: 8, border: "1px solid #ccc", borderRadius: 8 }}
-              />
-              <button onClick={addOwnedFromInput} style={btn}>
-                Adicionar
-              </button>
-            </div>
-
-            {/* contador */}
-            <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>{owned.size} tickers</div>
-
-            {/* lista */}
-            <ul style={{ listStyle: "none", padding: 0, margin: 0, maxHeight: 480, overflowY: "auto" }}>
-              {Array.from(owned)
-                .sort()
-                .map((t) => {
-                  const fr = ownedRanks.get(t) ?? null;
-                  const color = rankColor(fr);
-                  return (
-                    <li
-                      key={t}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        padding: "6px 0",
-                        borderBottom: "1px solid #f1f1f1",
-                      }}
-                    >
-                      <span style={{ fontWeight: 700, color, minWidth: 64 }}>{t}</span>
-                      <span style={{ fontSize: 12, color: "#555" }}>rank: {fr == null ? "—" : fr}</span>
-                      <div style={{ marginLeft: "auto" }}>
-                        <button onClick={() => removeOwned(t)} style={{ ...btn, padding: "4px 8px", borderColor: "#e88" }}>
-                          remover
-                        </button>
-                      </div>
-                    </li>
-                  );
-                })}
-              {owned.size === 0 && (
-                <li style={{ color: "#666", fontSize: 13 }}>Nenhum ticker. Use o campo acima ou o “+” na tabela.</li>
-              )}
-            </ul>
-          </div>
-        </aside>
-      </div>
+      </section>
 
       {error && <div style={{ marginTop: 8, color: "crimson" }}>Erro: {error}</div>}
     </main>
