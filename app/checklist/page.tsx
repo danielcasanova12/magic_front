@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { PortfolioAsset, loadPortfolio } from "../lib/portfolio";
+import { PortfolioAsset, loadPortfolio } from "../../lib/portfolio";
 import Link from 'next/link';
 
 type Row = {
@@ -48,7 +48,13 @@ async function fetchJsonSafe<T>(url: string): Promise<T> {
         const body = await res.text();
         throw new Error(`HTTP ${res.status} ${res.statusText} — Body: ${body}`);
     }
-    return res.json() as Promise<T>;
+    const ct = res.headers.get("content-type") || "";
+    if (!ct.includes("application/json")) {
+        // To prevent throwing on simple text responses, let's be more specific
+        // or decide what to do. For now, we assume JSON is expected.
+        console.warn(`Expected JSON response but got ${ct}`);
+    }
+    return res.json();
 }
 
 async function fetchPrices(tickers: string[]): Promise<Record<string, number>> {

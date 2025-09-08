@@ -49,7 +49,7 @@ export function buildFilters(
     if (arr.length > 0) {
       const placeholders = arr.map((_, i) => `$${values.length + i + 1}`).join(", ");
       values.push(...arr);
-      where.push(`${a}"ticker" IN (${placeholders})`);
+      where.push(`UPPER(${a}"ticker") IN (${placeholders})`);
     }
   }
 

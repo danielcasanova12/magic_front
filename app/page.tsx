@@ -90,7 +90,7 @@ export default function HomePage() {
   return (
     <main className="container mx-auto p-4 md:p-8">
       <header className="flex justify-between items-center mb-6">
-        <h1 className="text-4xl font-bold">Minha Carteira</h1>
+        <h1 className="text-6xl font-extrabold">Minha Carteira</h1>
         <Link href="/checklist" className="px-4 py-2 font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700">
             Analisar Carteira
         </Link>
