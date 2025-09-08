@@ -55,7 +55,8 @@ const tdStyle: CSSProperties = {
 
 export default function BuyPage() {
   const [rows, setRows] = useState<BuyRow[]>([]);
-  const [amount, setAmount] = useState("");
+  const [inputAmount, setInputAmount] = useState("");
+  const [amount, setAmount] = useState<number | null>(null);
 
   useEffect(() => {
     fetch("/api/buy")
@@ -103,11 +104,26 @@ export default function BuyPage() {
       <div style={{ marginTop: 16 }}>
         <input
           type="number"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
+          value={inputAmount}
+          onChange={(e) => setInputAmount(e.target.value)}
           placeholder="Valor para investir"
           style={inputStyle}
         />
+        <button
+          style={{
+            marginLeft: 8,
+            background: "#00ff88",
+            color: "#000",
+            border: "none",
+            borderRadius: 8,
+            padding: "8px 12px",
+            cursor: "pointer",
+            fontWeight: 600,
+          }}
+          onClick={() => setAmount(Number(inputAmount))}
+        >
+          Calcular
+        </button>
       </div>
 
       {plan.items.length > 0 && (
