@@ -14,7 +14,7 @@ type Row = {
   liquidity?: number | string | null;
   market_cap?: number | string | null;
   notes?: string | null;
-  final_rank?: number | string | null; // se sua /api/checklist já mandar, usamos direto na linha
+  final_rank?: number | string | null;
 };
 
 type ApiResp<T> = {
@@ -23,12 +23,12 @@ type ApiResp<T> = {
   pageSize?: number;
   total?: number;
   rows: T[];
-  error?: string; // <-- ADICIONE ESTA LINHA
+  error?: string;
 };
 
 type RankRow = { ticker: string; final_rank: number | null };
 
-// ===== helpers de número/format =====
+// ===== utils =====
 function n(v: unknown): number | null {
   const x = Number(v);
   return Number.isFinite(x) ? x : null;
@@ -52,6 +52,18 @@ function fmtMoney(v: unknown) {
   const x = n(v);
   if (x === null) return "—";
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }).format(x);
+}
+function shorten(s: string, max = 200) {
+  return s.length > max ? s.slice(0, max) + "…" : s;
+}
+async function fetchJsonSafe<T>(url: string): Promise<T> {
+  const res = await fetch(url, { cache: "no-store" });
+  const ct = res.headers.get("content-type") || "";
+  if (!ct.includes("application/json")) {
+    const body = await res.text();
+    throw new Error(`HTTP ${res.status} ${res.statusText} — Body: ${shorten(body)}`);
+  }
+  return res.json() as Promise<T>;
 }
 
 // ===== localStorage carteira =====
@@ -87,7 +99,10 @@ export default function ChecklistPage() {
   const [ownedInput, setOwnedInput] = useState("");
   const [ownedRanks, setOwnedRanks] = useState<Map<string, number | null>>(new Map());
 
-  // top/final rank rule: vermelho se < 20, verde caso contrário
+  // ping API/banco
+  const [dbInfo, setDbInfo] = useState<string | null>(null);
+
+  // top/final rank rule: verde se < 20, vermelho caso contrário
   function rankColor(finalRank: number | null | undefined) {
     if (finalRank != null && finalRank < 20) return "#0b7a0b"; // verde
     return "#b31313"; // vermelho
@@ -115,15 +130,16 @@ export default function ChecklistPage() {
     setLoading(true);
     setError(null);
     try {
-        const res = await fetch(`/api/checklist?${qs}`, { cache: "no-store" });
-        const data: ApiResp<Row> = await res.json();
-        if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
-        setRows(data.rows || []);
-        setTotal(data.total || 0);
+      const data = await fetchJsonSafe<ApiResp<Row>>(`/api/checklist?${qs}`);
+      if (!data.ok) throw new Error(data.error || "Erro na API");
+      setRows(data.rows || []);
+      setTotal(data.total || 0);
     } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : String(e);
-        setError(msg || "Erro ao carregar");
-    }finally {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg || "Erro ao carregar");
+      setRows([]);
+      setTotal(0);
+    } finally {
       setLoading(false);
     }
   }
@@ -131,6 +147,19 @@ export default function ChecklistPage() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [qs]);
+
+  // ping de diagnóstico (opcional)
+  useEffect(() => {
+    (async () => {
+      try {
+        const info = await fetchJsonSafe<{ ok: boolean }>(`/api/db-test`);
+        setDbInfo(info?.ok ? "API/DB: OK" : "API/DB: erro");
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        setDbInfo(`API/DB: ${msg}`);
+      }
+    })();
+  }, []);
 
   // atualizar ranks da carteira (bulk)
   async function refreshOwnedRanks(currentOwned: Set<string>) {
@@ -140,10 +169,8 @@ export default function ChecklistPage() {
       return;
     }
     try {
-      const url = `/api/ranks?tickers=${encodeURIComponent(list.join(","))}`;
-      const res = await fetch(url, { cache: "no-store" });
-      const data: ApiResp<RankRow> = await res.json();
-      if (res.ok && data.ok) {
+      const data = await fetchJsonSafe<ApiResp<RankRow>>(`/api/ranks?tickers=${encodeURIComponent(list.join(","))}`);
+      if (data.ok) {
         const m = new Map<string, number | null>();
         for (const r of data.rows) {
           m.set(r.ticker.toUpperCase(), r.final_rank);
@@ -151,7 +178,7 @@ export default function ChecklistPage() {
         setOwnedRanks(m);
       }
     } catch {
-      // ignora
+      // ignora erro de ranks, UI continua
     }
   }
 
@@ -232,6 +259,13 @@ export default function ChecklistPage() {
         <strong>Minha carteira</strong>: vermelho se <code>final_rank &lt; 20</code>, verde caso contrário.
       </p>
 
+      {/* aviso de API/DB */}
+      {dbInfo && (
+        <div style={{ marginBottom: 8, fontSize: 12, color: dbInfo.includes("OK") ? "#0b7a0b" : "crimson" }}>
+          {dbInfo}
+        </div>
+      )}
+
       {/* layout em 2 colunas: tabela (flex 3) | carteira (flex 1) */}
       <div style={{ display: "grid", gridTemplateColumns: "3fr 1fr", gap: 16 }}>
         {/* COLUNA ESQUERDA — Tabela */}
@@ -295,12 +329,14 @@ export default function ChecklistPage() {
                   <Th label={"Ticker" + sortIndicator("ticker")} onClick={() => toggleSort("ticker")} />
                   <Th label="Empresa" />
                   <Th label="Setor" />
-                  <Th label={"Earning Yield" + sortIndicator("earning_yield")} onClick={() => toggleSort("earning_yield")} />
+                  <Th
+                    label={"Earning Yield" + sortIndicator("earning_yield")}
+                    onClick={() => toggleSort("earning_yield")}
+                  />
                   <Th label={"ROIC %" + sortIndicator("roic_pct")} onClick={() => toggleSort("roic_pct")} />
                   <Th label={"I10" + sortIndicator("i10_score")} onClick={() => toggleSort("i10_score")} />
                   <Th label={"Liquidez" + sortIndicator("liquidity")} onClick={() => toggleSort("liquidity")} />
                   <Th label={"Market Cap" + sortIndicator("market_cap")} onClick={() => toggleSort("market_cap")} />
-                  {/* se sua API já mandar final_rank, vale a pena mostrar */}
                   <Th label={"Final Rank" + sortIndicator("final_rank")} onClick={() => toggleSort("final_rank")} />
                   <Th label={"Notas"} />
                 </tr>
@@ -317,7 +353,7 @@ export default function ChecklistPage() {
                 {rows.map((r, idx) => {
                   const rowNumber = (page - 1) * pageSize + (idx + 1);
                   const t = r.ticker.toUpperCase();
-                  const fr = r.final_rank != null ? n(r.final_rank) : ownedRanks.get(t) ?? null; // usa da linha se existir
+                  const fr = r.final_rank != null ? n(r.final_rank) : ownedRanks.get(t) ?? null;
                   const color = rankColor(fr);
 
                   return (
@@ -343,7 +379,15 @@ export default function ChecklistPage() {
                       <td style={td}>{fmtNum(r.liquidity)}</td>
                       <td style={td}>{fmtMoney(r.market_cap)}</td>
                       <td style={td}>{fr ?? "—"}</td>
-                      <td style={{ ...td, maxWidth: 280, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      <td
+                        style={{
+                          ...td,
+                          maxWidth: 280,
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        }}
+                      >
                         {r.notes ?? ""}
                       </td>
                     </tr>
@@ -355,13 +399,21 @@ export default function ChecklistPage() {
 
           {/* Paginação */}
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 12 }}>
-            <button onClick={() => setPage(1)} disabled={page <= 1} style={btn}>«</button>
-            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1} style={btn}>Anterior</button>
+            <button onClick={() => setPage(1)} disabled={page <= 1} style={btn}>
+              «
+            </button>
+            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1} style={btn}>
+              Anterior
+            </button>
             <span style={{ padding: "4px 8px" }}>
               Página <strong>{page}</strong> de <strong>{totalPages}</strong>
             </span>
-            <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages} style={btn}>Próxima</button>
-            <button onClick={() => setPage(totalPages)} disabled={page >= totalPages} style={btn}>»</button>
+            <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages} style={btn}>
+              Próxima
+            </button>
+            <button onClick={() => setPage(totalPages)} disabled={page >= totalPages} style={btn}>
+              »
+            </button>
           </div>
         </section>
 
@@ -378,33 +430,42 @@ export default function ChecklistPage() {
                 placeholder="Ex.: ITSA4, PETR4"
                 style={{ flex: 1, padding: 8, border: "1px solid #ccc", borderRadius: 8 }}
               />
-              <button onClick={addOwnedFromInput} style={btn}>Adicionar</button>
+              <button onClick={addOwnedFromInput} style={btn}>
+                Adicionar
+              </button>
             </div>
 
             {/* contador */}
-            <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>
-              {owned.size} tickers
-            </div>
+            <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>{owned.size} tickers</div>
 
             {/* lista */}
             <ul style={{ listStyle: "none", padding: 0, margin: 0, maxHeight: 480, overflowY: "auto" }}>
-              {Array.from(owned).sort().map((t) => {
-                const fr = ownedRanks.get(t) ?? null;
-                const color = rankColor(fr);
-                return (
-                  <li key={t} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid #f1f1f1" }}>
-                    <span style={{ fontWeight: 700, color, minWidth: 64 }}>{t}</span>
-                    <span style={{ fontSize: 12, color: "#555" }}>
-                      rank: {fr == null ? "—" : fr}
-                    </span>
-                    <div style={{ marginLeft: "auto" }}>
-                      <button onClick={() => removeOwned(t)} style={{ ...btn, padding: "4px 8px", borderColor: "#e88" }}>
-                        remover
-                      </button>
-                    </div>
-                  </li>
-                );
-              })}
+              {Array.from(owned)
+                .sort()
+                .map((t) => {
+                  const fr = ownedRanks.get(t) ?? null;
+                  const color = rankColor(fr);
+                  return (
+                    <li
+                      key={t}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "6px 0",
+                        borderBottom: "1px solid #f1f1f1",
+                      }}
+                    >
+                      <span style={{ fontWeight: 700, color, minWidth: 64 }}>{t}</span>
+                      <span style={{ fontSize: 12, color: "#555" }}>rank: {fr == null ? "—" : fr}</span>
+                      <div style={{ marginLeft: "auto" }}>
+                        <button onClick={() => removeOwned(t)} style={{ ...btn, padding: "4px 8px", borderColor: "#e88" }}>
+                          remover
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
               {owned.size === 0 && (
                 <li style={{ color: "#666", fontSize: 13 }}>Nenhum ticker. Use o campo acima ou o “+” na tabela.</li>
               )}
