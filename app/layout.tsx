@@ -46,6 +46,7 @@ function Header() {
       <Link href="/" style={linkStyle}>Home</Link>
       <Link href="/checklist" style={linkStyle}>Checklist</Link>
       <Link href="/latest" style={linkStyle}>Latest</Link>
+      <Link href="/buy" style={linkStyle}>Buy</Link>
     </nav>
   );
 }
