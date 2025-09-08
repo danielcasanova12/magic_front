@@ -1,4 +1,6 @@
 // scripts/db-check.js
+/* eslint-disable @typescript-eslint/no-require-imports */
+// scripts/db-check.js
 require("dotenv").config();
 const { Pool } = require("pg");
 

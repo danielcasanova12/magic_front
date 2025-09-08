@@ -40,7 +40,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // filtros (apenas por ticker, opcional)
     const where: string[] = [];
-    const values: any[] = [];
+    const values: unknown[] = [];
     if (q) {
       values.push(`%${q}%`);
       where.push(`"ticker" ILIKE $${values.length}`);
@@ -85,8 +85,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       total: countRows[0]?.total ?? 0,
       rows,
     });
-  } catch (err: any) {
-    console.error("checklist error:", err);
-    res.status(500).json({ ok: false, error: err?.message ?? "unknown error" });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    res.status(500).json({ ok: false, error: message });
   }
 }

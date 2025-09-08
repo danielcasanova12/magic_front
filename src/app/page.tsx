@@ -1,8 +1,15 @@
 "use client";
 import { useEffect, useState } from "react";
-
+type ApiResp<T> = {
+  ok: boolean;
+  page?: number;
+  pageSize?: number;
+  total?: number;
+  rows: T[];
+  error?: string; // <-- ADICIONE ESTA LINHA
+};
 export default function Home() {
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<ApiResp<unknown> | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {

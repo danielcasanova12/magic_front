@@ -1,6 +1,9 @@
+// pages/api/stocks.ts
 import type { NextApiRequest, NextApiResponse } from "next";
 import { query } from "../../lib/db";
+// use relativo:
 import { getColumns, getPaging, buildFilters, buildOrderBy, allowedSortCols } from "../../lib/sql";
+// se preferir alias "@/lib/sql", configure tsconfig (abaixo)
 
 const SCHEMA = process.env.DB_SCHEMA || "public";
 const TABLE = "statusinvest_latest";
@@ -58,8 +61,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       total: countRows[0]?.total ?? 0,
       rows
     });
-  } catch (err: any) {
+    } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
     console.error("stocks error:", err);
-    res.status(500).json({ ok: false, error: err?.message ?? "unknown error" });
-  }
+    res.status(500).json({ ok: false, error: message });
+    }
 }

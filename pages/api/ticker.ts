@@ -48,10 +48,11 @@ async function getTicker(req: NextApiRequest, res: NextApiResponse) {
 
     if (!rows.length) return res.status(404).json({ ok: false, error: "ticker não encontrado" });
     res.status(200).json({ ok: true, data: rows[0] });
-  } catch (err: any) {
-    console.error("ticker GET error:", err);
-    res.status(500).json({ ok: false, error: err?.message ?? "unknown error" });
-  }
+    } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    console.error("ticker PATCH/GET error:", err);
+    res.status(500).json({ ok: false, error: message });
+    }
 }
 
 async function patchTicker(req: NextApiRequest, res: NextApiResponse) {
@@ -84,8 +85,9 @@ async function patchTicker(req: NextApiRequest, res: NextApiResponse) {
     // retorna o estado atualizado
     req.query.ticker = ticker;
     return getTicker(req, res);
-  } catch (err: any) {
-    console.error("ticker PATCH error:", err);
-    res.status(500).json({ ok: false, error: err?.message ?? "unknown error" });
-  }
+    } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    console.error("ticker PATCH/GET error:", err);
+    res.status(500).json({ ok: false, error: message });
+    }
 }

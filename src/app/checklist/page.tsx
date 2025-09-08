@@ -23,6 +23,7 @@ type ApiResp<T> = {
   pageSize?: number;
   total?: number;
   rows: T[];
+  error?: string; // <-- ADICIONE ESTA LINHA
 };
 
 type RankRow = { ticker: string; final_rank: number | null };
@@ -114,14 +115,15 @@ export default function ChecklistPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/checklist?${qs}`, { cache: "no-store" });
-      const data: ApiResp<Row> = await res.json();
-      if (!res.ok || !data.ok) throw new Error(data?.["error"] || `HTTP ${res.status}`);
-      setRows(data.rows || []);
-      setTotal(data.total || 0);
-    } catch (e: any) {
-      setError(e?.message || "Erro ao carregar");
-    } finally {
+        const res = await fetch(`/api/checklist?${qs}`, { cache: "no-store" });
+        const data: ApiResp<Row> = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+        setRows(data.rows || []);
+        setTotal(data.total || 0);
+    } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        setError(msg || "Erro ao carregar");
+    }finally {
       setLoading(false);
     }
   }

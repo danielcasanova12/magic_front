@@ -1,10 +1,7 @@
 // lib/db.ts
-
-import { Pool } from "pg";
+import { Pool, QueryResult, QueryResultRow } from "pg";
 
 declare global {
-  // Evita recriar o pool no hot reload do Next (apenas em dev)
-  // eslint-disable-next-line no-var
   var __pgPool: Pool | undefined;
 }
 
@@ -13,33 +10,35 @@ function makePool() {
   if (!databaseUrl) {
     throw new Error("DATABASE_URL não definida no .env");
   }
-
-  // Habilita SSL se PGSSLMODE=require (ou se a URL já tiver sslmode=require)
   const useSSL =
     process.env.PGSSLMODE === "require" ||
     /sslmode=require/.test(databaseUrl);
 
-  const pool = new Pool({
+  return new Pool({
     connectionString: databaseUrl,
     ssl: useSSL ? { rejectUnauthorized: false } : undefined,
     max: 10,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
   });
-
-  return pool;
 }
 
-export const pg =
-  global.__pgPool ?? (global.__pgPool = makePool());
+export const pg = global.__pgPool ?? (global.__pgPool = makePool());
 
-export async function query<T = any>(text: string, params?: any[]) {
+/**
+ * Executa uma query fortemente tipada.
+ * - T é o tipo de cada linha retornada e DEVE estender QueryResultRow.
+ */
+export async function query<T extends QueryResultRow = QueryResultRow>(
+  text: string,
+  params?: unknown[]
+): Promise<QueryResult<T>> {
   const start = Date.now();
-  const res = await pg.query<T>(text, params);
+  const res = await pg.query<T>(text, params as unknown[]);
   const duration = Date.now() - start;
-  // Log simples (apenas em dev)
+
   if (process.env.NODE_ENV !== "production") {
-    console.log(`🗃️  SQL ${duration}ms | ${text} | ${params ?? []}`);
+    console.log(`🗃️  SQL ${duration}ms | ${text} | ${Array.isArray(params) ? params : ""}`);
   }
   return res;
 }

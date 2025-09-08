@@ -1,24 +1,18 @@
+// lib/sql.ts
 import { query } from "./db";
 
-const CACHE: Record<string, Set<string>> = {};
-
-/** Retorna set de colunas existentes para uma tabela (cacheado) */
-export async function getColumns(table: string, schema = process.env.DB_SCHEMA || "public") {
-  const key = `${schema}.${table}`;
-  if (CACHE[key]) return CACHE[key];
-  const { rows } = await query<{ column_name: string }>(
+export async function getColumns(table: string, schema = process.env.DB_SCHEMA || "public"): Promise<Set<string>> {
+  type Row = { column_name: string };
+  const { rows } = await query<Row>(
     `SELECT column_name
        FROM information_schema.columns
       WHERE table_schema = $1 AND table_name = $2`,
     [schema, table]
   );
-  const set = new Set(rows.map(r => r.column_name));
-  CACHE[key] = set;
-  return set;
+  return new Set(rows.map((r) => r.column_name));
 }
 
-/** Retorna pageSize (1..200), page (>=1) e offset seguro */
-export function getPaging(req: any) {
+export function getPaging(req: { query?: Record<string, unknown> }) {
   const page = Math.max(1, parseInt(String(req.query?.page ?? "1"), 10) || 1);
   const pageSizeEnv = parseInt(String(process.env.PAGE_SIZE ?? "30"), 10) || 30;
   const requested = parseInt(String(req.query?.pageSize ?? pageSizeEnv), 10) || pageSizeEnv;
@@ -27,25 +21,27 @@ export function getPaging(req: any) {
   return { page, pageSize, offset };
 }
 
-/** Constrói ORDER BY seguro com whitelist e suporte a prefixo '-' */
-export function buildOrderBy(sortParam: string | undefined, allowed: string[], tableAlias?: string) {
-  if (!sortParam) return `ORDER BY ${tableAlias ? tableAlias + "." : ""}ticker`;
+export function buildOrderBy(
+  sortParam: string | undefined,
+  allowed: string[],
+  tableAlias?: string
+) {
+  const fallback = `ORDER BY ${tableAlias ? `${tableAlias}.` : ""}ticker`;
+  if (!sortParam) return fallback;
   const desc = sortParam.startsWith("-");
   const col = desc ? sortParam.slice(1) : sortParam;
-  if (!allowed.includes(col)) return `ORDER BY ${tableAlias ? tableAlias + "." : ""}ticker`;
-  const qualified = `${tableAlias ? tableAlias + "." : ""}"${col}"`;
+  if (!allowed.includes(col)) return fallback;
+  const qualified = `${tableAlias ? `${tableAlias}.` : ""}"${col}"`;
   return `ORDER BY ${qualified} ${desc ? "DESC" : "ASC"}`;
 }
 
-/** Monta filtro WHERE básico (q/sector/mins) respeitando colunas disponíveis */
-export function buildFilters(params: {
-  q?: string;
-  sector?: string;
-  min_liquidity?: number;
-  min_mcap?: number;
-}, cols: Set<string>, alias = "") {
+export function buildFilters(
+  params: { q?: string; sector?: string; min_liquidity?: number; min_mcap?: number },
+  cols: Set<string>,
+  alias = ""
+) {
   const where: string[] = [];
-  const values: any[] = [];
+  const values: unknown[] = [];
   const a = alias ? alias + "." : "";
 
   if (params.q) {
@@ -82,13 +78,11 @@ export function buildFilters(params: {
   return { whereSql, values };
 }
 
-/** Retorna colunas numéricas “comuns” existentes para ordenação/filtros */
 export function commonNumericCols(cols: Set<string>) {
   const candidates = ["earning_yield", "roic_pct", "i10_score", "liquidity", "market_cap", "marketcap"];
-  return candidates.filter(c => cols.has(c));
+  return candidates.filter((c) => cols.has(c));
 }
 
-/** Retorna colunas permitidas para ORDER BY (ticker + numéricas comuns) */
 export function allowedSortCols(cols: Set<string>) {
   return ["ticker", ...commonNumericCols(cols)];
 }
