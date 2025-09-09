@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
 
 interface BuyRow {
   ticker: string;
@@ -57,15 +57,26 @@ export default function BuyPage() {
   const [rows, setRows] = useState<BuyRow[]>([]);
   const [inputAmount, setInputAmount] = useState("");
   const [amount, setAmount] = useState<number | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetch("/api/buy")
-      .then((r) => r.json())
-      .then((j: ApiResp<BuyRow>) => {
-        if (j.ok) setRows(j.rows);
-      })
-      .catch(() => {});
-  }, []);
+  async function handleCalculate() {
+    const money = Number(inputAmount);
+    if (!Number.isFinite(money) || money <= 0) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/buy");
+      const j: ApiResp<BuyRow> = await res.json();
+      if (!j.ok) throw new Error(j.error || "erro desconhecido");
+      setRows(j.rows);
+      setAmount(money);
+    } catch (err) {
+      setError("Não foi possível carregar os dados");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   const plan = useMemo(() => {
     const total = Number(amount);
@@ -110,6 +121,7 @@ export default function BuyPage() {
           style={inputStyle}
         />
         <button
+          type="button"
           style={{
             marginLeft: 8,
             background: "#00ff88",
@@ -119,12 +131,18 @@ export default function BuyPage() {
             padding: "8px 12px",
             cursor: "pointer",
             fontWeight: 600,
+            opacity: loading ? 0.6 : 1,
           }}
-          onClick={() => setAmount(Number(inputAmount))}
+          onClick={handleCalculate}
+          disabled={loading}
         >
-          Calcular
+          {loading ? "Calculando..." : "Calcular"}
         </button>
       </div>
+
+      {error && (
+        <p style={{ marginTop: 12, color: "#ff5555" }}>{error}</p>
+      )}
 
       {plan.items.length > 0 && (
         <table style={tableStyle}>
