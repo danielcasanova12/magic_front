@@ -29,8 +29,8 @@ function savePortfolio(items: PortfolioItem[]) {
 
 const containerStyle: CSSProperties = {
   minHeight: "100vh",
-  background: "linear-gradient(135deg, #001a00 0%, #000000 100%)",
-  color: "#ffffff",
+  background: "#ffffff",
+  color: "#000000",
   padding: 24,
   fontFamily: "Arial, sans-serif",
 };
@@ -38,15 +38,14 @@ const containerStyle: CSSProperties = {
 const headingStyle: CSSProperties = {
   fontSize: 32,
   fontWeight: 700,
-  textShadow: "0 0 8px #00ff88",
 };
 
 const inputStyle: CSSProperties = {
-  background: "rgba(255,255,255,0.1)",
-  border: "1px solid #00ff88",
+  background: "#ffffff",
+  border: "1px solid #cccccc",
   borderRadius: 8,
   padding: "8px",
-  color: "#ffffff",
+  color: "#000000",
 };
 
 const buttonStyle: CSSProperties = {
@@ -74,7 +73,7 @@ const thStyle: CSSProperties = {
 
 const tdStyle: CSSProperties = {
   padding: 8,
-  borderBottom: "1px solid #003300",
+  borderBottom: "1px solid #cccccc",
 };
 
 const removeBtn: CSSProperties = {
